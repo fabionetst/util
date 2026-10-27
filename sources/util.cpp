@@ -4,13 +4,16 @@
 #include <vector>
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
+#include <chrono>
+#include <any>
 #include <xlsxio_read.h> // Cabeçalho oficial de leitura da XLSX I/O
 
 class Xls {
 
     private:
 
-    std::string strNomeArq,strValor;
+    std::string strValor;
 
     xlsxioreader xlsLeitor;
     xlsxioreadersheet xlsFolha;
@@ -53,7 +56,6 @@ class Xls {
     Xls(const std::string strNomeArq)
     {
         bXlsFolha = bXlsLeitor = false;
-        this-> strNomeArq = strNomeArq;
 
         if((xlsLeitor = xlsxioread_open(strNomeArq.c_str())) != NULL)
             bXlsLeitor = true;
@@ -72,59 +74,104 @@ class Xls {
 
 class FUtil {
     
+    private:
+
+    std::vector<std::vector<std::string>> vvstrTabela;
+    std::vector<std::pair<int,int>> vpQuantInd;
+    std::vector<float> vfPorCento;
+    std::vector<std::vector<int>> vviLotofacil;
+
+    unsigned int nTotalLin,ultimaLin;//,nTotalCol;
     
     public:
 
-    bool estatisticas(int nVezes=0)
+    int lerXls()
     {
-        std::vector<std::string> vLinha;
-        std::vector<std::vector<std::string>> vTabela;
-        std::vector<int> vnQuant(26,0);
-        std::vector<float> vfPorCento(26,0);
-        std::vector<std::pair<int,int>> vpQuantInd;
-        std::vector<int> viLotofacil;
-
-        std::fstream arq;
-
-        unsigned int nTotalLin,nTotalCol;
-
-        int ultimaLin;
+        std::vector<std::string> vstrLinha;
         
         Xls lf ("../db/lotofacil.xlsx");
 
-        if(!lf.okLeitor()) {
-
-            std::cout<< "Erro ao tentar abrir arquivo.\n";
-            return false;
-        }
-        else if(!lf.okFolha()) {
-
-            std::cout<< "Erro ao tentar abrir tabela.\n";
-            return false;
-        }
-        else if(!lf.lerLinha()) {
-
-            std::cout<< "Tabela vazia.\n";
-            return false;
-        }
+        if(!lf.okLeitor())
+            return -1;
+        else if(!lf.okFolha())
+            return -2;
+        else if(!lf.lerLinha())
+            return -3;
 
         while(lf.lerLinha()) {
 
             while(lf.lerCelula()) {
 
                 if(lf.impCelula() == "")
-                    vLinha.push_back(" ");
+                    vstrLinha.push_back(" ");
                 else 
-                    vLinha.push_back(lf.impCelula());
+                    vstrLinha.push_back(lf.impCelula());
             }
 
-            vTabela.push_back(vLinha);
-            vLinha.clear();
+            vvstrTabela.push_back(vstrLinha);
+            vstrLinha.clear();
         }
 
-        arq.open("../db/lotofacil.tdb",std::fstream::out|std::fstream::trunc);
+        return 0;
+    }
+
+    void calculaValores(int nVezes)
+    {
+        std::vector<int> viQuant(26,0);
+        std::vector<int> viLf;
+
+        for(auto &vT: vvstrTabela) {
+
+            viLf.clear();
+            for(int nC = 2; nC < 17; nC++)
+                viLf.push_back(std::stoi(vT[nC]));
+
+            vviLotofacil.push_back(viLf);
+        }
+
+        nTotalLin = vvstrTabela.size();
+        //nTotalCol = vvstrTabela[0].size();
+        ultimaLin = nTotalLin -1;
         
-        for(auto &t: vTabela) {
+        for(int iL = (nTotalLin -nVezes); iL < (ultimaLin -1); iL++)
+            for(int iC = 2; iC < 17; iC++)
+                viQuant[std::stoi(vvstrTabela[iL][iC])]++;
+        for(int nN = 1; nN <= 25; nN++)
+            vpQuantInd.push_back({viQuant[nN],nN});
+        std::sort(vpQuantInd.rbegin(),vpQuantInd.rend());
+
+        for(auto &par: vpQuantInd)
+            vfPorCento[par.second] = ((float) par.first /nVezes *100);
+    }
+
+    bool relatorio(int nVezes=0)
+    {
+        std::fstream arq;
+
+        switch(lerXls()) {
+
+            case -1:
+                std::cout<< "Erro ao tentar abrir arquivo.\n";
+                return false;
+            break;
+            case -2:
+                std::cout<< "Erro ao tentar abrir tabela.\n";
+                return false;
+            break;
+            case -3:
+                std::cout<< "Tabela vazia.\n";
+                return false;
+            break;
+        }
+
+        if(nVezes <= 0)
+            nVezes = nTotalLin;
+
+        calculaValores(nVezes);
+
+        //--> IMPRIME CONTEÚDO DE LOTOFACIL.XLSX PARA LOTOFACIL.TDB <----
+        arq.open("../db/lotofacil.tdb",std::fstream::out|std::fstream::trunc);
+        for(auto &t: vvstrTabela) {
 
             for(auto &l: t)
                 arq<< l<< '#';
@@ -133,47 +180,42 @@ class FUtil {
         }
         arq.close();
 
-        nTotalLin = vTabela.size();
-        nTotalCol = vTabela[0].size();
-        ultimaLin = nTotalLin -1;
-
-        for(int nC = 2; nC < 17; nC++)
-            viLotofacil.push_back(std::stoi(vTabela[ultimaLin][nC]));
-
-        if(nVezes <= 0)
-            nVezes = nTotalLin;
-
-        for(int iL = (nTotalLin -nVezes); iL < (ultimaLin -1); iL++)
-            for(int iC = 2; iC < 17; iC++)
-                vnQuant[std::stoi(vTabela[iL][iC])]++;
-        for(int nN = 1; nN <= 25; nN++)
-            vpQuantInd.push_back({vnQuant[nN],nN});
-        std::sort(vpQuantInd.rbegin(),vpQuantInd.rend());
-        
-
+        //--> IMPRIME CONTEÚDO DE QUANTLF.TDB <----
         arq.open("../db/quantlf.tdb",std::fstream::out|std::fstream::trunc);
         for(auto &par: vpQuantInd) {
 
-            vfPorCento[par.second] = ((float) par.first /nVezes *100);
             arq<< std::setw(2)<< std::setfill('0')<< par.second<< ';'
                << std::setw(2)<< std::setfill('0')<< par.first<< ';'
                << std::fixed<< std::setprecision(2)<< vfPorCento[par.second];
 
-            if(std::find(viLotofacil.begin(),viLotofacil.end(),par.second) != viLotofacil.end())
+            if(std::find(vviLotofacil[ultimaLin].begin(),vviLotofacil[ultimaLin].end(),
+                         par.second) != vviLotofacil[ultimaLin].end())
                 arq<< ";*";
             
             arq<< std::endl;
         }
         arq.close();
+        
 
+        //--> IMPRIME CONTEŨDO DE GQUANTLF.TDB <----
         arq.open("../db/gquantlf.tdb",std::fstream::out|std::fstream::trunc);
-        arq<< "\t\t\tMédia: "<< nVezes<< std::endl;
+
+        std::filesystem::path caminhoArq ("../db/gquantlf.tdb");
+
+        auto dataCriacao = std::filesystem::last_write_time(caminhoArq);
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+             dataCriacao - std::filesystem::file_time_type::clock::now() + 
+             std::chrono::system_clock::now());
+        std::time_t tempoLegivel = std::chrono::system_clock::to_time_t(sctp);
+
+        arq<< std::ctime(&tempoLegivel)<< "\n\t\t\tMédia: "<< nVezes<< std::endl;
         for(int nC = 0; nC < 25; nC++) {
 
             arq<< std::setw(2)<< std::setfill('0')<< vpQuantInd[nC].second<< " "
                << std::string(vfPorCento[vpQuantInd[nC].second] -1,'*');
 
-            if(std::find(viLotofacil.begin(),viLotofacil.end(),vpQuantInd[nC].second) != viLotofacil.end())
+            if(std::find(vviLotofacil[ultimaLin].begin(),vviLotofacil[ultimaLin].end(),
+                         vpQuantInd[nC].second) != vviLotofacil[ultimaLin].end())
                 arq<< 'x';
             else
                 arq<< '*';
@@ -182,35 +224,32 @@ class FUtil {
         }
 
         arq<< "\nN. acertos 15: "<< std::setfill(' ')
-           << std::setw(6)<< std::right<< vTabela[ultimaLin][17]<< " "
-           << vTabela[ultimaLin][18]<< " "
-           << vTabela[ultimaLin][19]<< "\n"
+           << std::setw(6)<< std::right<< vvstrTabela[ultimaLin][17]<< " "
+           << vvstrTabela[ultimaLin][18]<< " "
+           << vvstrTabela[ultimaLin][19]<< "\n"
 
            << "\nN. acertos 14: "
-           << std::setw(6)<< std::right<< vTabela[ultimaLin][20]<< " "
-           << std::setw(10)<< std::right<< vTabela[ultimaLin][21]
+           << std::setw(6)<< std::right<< vvstrTabela[ultimaLin][20]<< " "
+           << std::setw(10)<< std::right<< vvstrTabela[ultimaLin][21]
 
            << "\nN. acertos 13: "
-           << std::setw(6)<< std::right<< vTabela[ultimaLin][22]<< " "
-           << std::setw(10)<< std::right<< vTabela[ultimaLin][23]
+           << std::setw(6)<< std::right<< vvstrTabela[ultimaLin][22]<< " "
+           << std::setw(10)<< std::right<< vvstrTabela[ultimaLin][23]
 
            << "\nN. acertos 12: "
-           << std::setw(6)<< std::right<< vTabela[ultimaLin][24]<< " "
-           << std::setw(10)<< std::right<< vTabela[ultimaLin][25]
+           << std::setw(6)<< std::right<< vvstrTabela[ultimaLin][24]<< " "
+           << std::setw(10)<< std::right<< vvstrTabela[ultimaLin][25]
 
            << "\nN. acertos 11: "
-           << std::setw(6)<< std::right<< vTabela[ultimaLin][26]<< " "
-           << std::setw(10)<< std::right<< vTabela[ultimaLin][27];
-
+           << std::setw(6)<< std::right<< vvstrTabela[ultimaLin][26]<< " "
+           << std::setw(10)<< std::right<< vvstrTabela[ultimaLin][27];
 
         arq.close();
         
         return true;
     }
 
-    
-
-    FUtil()
+    FUtil(): vfPorCento(26,0.0)
     {
 
     }
@@ -219,7 +258,7 @@ class FUtil {
 
 int main()
 {
-    util.estatisticas(30);
+    util.relatorio(30);
     
     return 0;
 }

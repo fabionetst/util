@@ -1,0 +1,6 @@
+{
+    "cmake.cmakePath": "cmake",
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    // Esta linha diz ao VS Code para procurar e rodar o executável na raiz do projeto:
+    "cmake.targetBuildDirectory": "${workspaceFolder}"
+}

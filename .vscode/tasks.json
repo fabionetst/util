@@ -1,0 +1,33 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "C/C++: g++-14 arquivo de build ativo",
+            "command": "/usr/bin/g++-14",
+            "args": [
+                "-fdiagnostics-color=always",
+                "-g",
+                "${file}",
+                "-o",
+                //"${workspaceFolder}/util",
+                "${workspaceFolder}/bin/util",
+                // ESTAS LINHAS ABAIXO ADICIONAM A BIBLIOTECA DA MANEIRA CORRETA
+                "-I/usr/local/include",
+                "-L/usr/local/lib",
+                "-lxlsxio_read"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Tarefa gerada pelo Depurador para linkar com XLSX I/O."
+        }
+    ],
+    "version": "2.0.0"
+}
